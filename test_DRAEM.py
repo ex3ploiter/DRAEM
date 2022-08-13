@@ -6,6 +6,8 @@ import numpy as np
 from sklearn.metrics import roc_auc_score, average_precision_score
 from model_unet import ReconstructiveSubNetwork, DiscriminativeSubNetwork
 import os
+import gc
+import csv 
 
 def write_results_to_file(run_name, image_auc, pixel_auc, image_ap, pixel_ap):
     if not os.path.exists('./outputs/'):
@@ -67,15 +69,19 @@ def test(obj_names, mvtec_path, checkpoint_path, base_model_name):
         anomaly_score_gt = []
         anomaly_score_prediction = []
 
-        display_images = torch.zeros((16 ,3 ,256 ,256)).cuda()
-        display_gt_images = torch.zeros((16 ,3 ,256 ,256)).cuda()
-        display_out_masks = torch.zeros((16 ,1 ,256 ,256)).cuda()
-        display_in_masks = torch.zeros((16 ,1 ,256 ,256)).cuda()
+        display_images = torch.zeros((16 ,3 ,256 ,256))
+        display_gt_images = torch.zeros((16 ,3 ,256 ,256))
+        display_out_masks = torch.zeros((16 ,1 ,256 ,256))
+        display_in_masks = torch.zeros((16 ,1 ,256 ,256))
         cnt_display = 0
         display_indices = np.random.randint(len(dataloader), size=(16,))
 
+        path_score_list=[]
+
 
         for i_batch, sample_batched in enumerate(dataloader):
+            print(i_batch)
+            # print(sample_batched["img_path"])
 
             gray_batch = sample_batched["image"].cuda()
 
@@ -84,10 +90,27 @@ def test(obj_names, mvtec_path, checkpoint_path, base_model_name):
             true_mask = sample_batched["mask"]
             true_mask_cv = true_mask.detach().numpy()[0, :, :, :].transpose((1, 2, 0))
 
-            gray_rec = model(gray_batch)
-            joined_in = torch.cat((gray_rec.detach(), gray_batch), dim=1)
+            try:
+              model.cuda()
+              gray_rec = model(gray_batch)
+              model.cpu()
+            except:
+              model.cpu()
+              gray_rec = model(gray_batch.cpu())
+            
+            try:
+              joined_in = torch.cat((gray_rec.detach(), gray_batch), dim=1)
+            except:
+              joined_in = torch.cat((gray_rec.cpu().detach(), gray_batch.cpu()), dim=1)
 
-            out_mask = model_seg(joined_in)
+            try:
+              model_seg.cuda()
+              out_mask = model_seg(joined_in)
+              model_seg.cpu()
+            except:
+              model_seg.cpu()
+              out_mask = model_seg(joined_in.cpu())
+            
             out_mask_sm = torch.softmax(out_mask, dim=1)
 
 
@@ -108,11 +131,29 @@ def test(obj_names, mvtec_path, checkpoint_path, base_model_name):
 
             anomaly_score_prediction.append(image_score)
 
+            path_score_list.append([sample_batched["img_path"][0],image_score])
+
             flat_true_mask = true_mask_cv.flatten()
             flat_out_mask = out_mask_cv.flatten()
             total_pixel_scores[mask_cnt * img_dim * img_dim:(mask_cnt + 1) * img_dim * img_dim] = flat_out_mask
             total_gt_pixel_scores[mask_cnt * img_dim * img_dim:(mask_cnt + 1) * img_dim * img_dim] = flat_true_mask
             mask_cnt += 1
+            
+            
+            gray_batch.cpu().detach()
+            gc.collect()
+
+            torch.cuda.empty_cache()
+
+            
+        
+        print(anomaly_score_prediction)
+        print(path_score_list)
+        with open('scores_'+obj_names[0]+'.csv','w') as f:
+          write = csv.writer(f)
+          write.writerows(path_score_list)
+          # for i in path_score_list:
+          #   write.writerows(i)
 
         anomaly_score_prediction = np.array(anomaly_score_prediction)
         anomaly_score_gt = np.array(anomaly_score_gt)
@@ -154,22 +195,23 @@ if __name__=="__main__":
 
     args = parser.parse_args()
 
-    obj_list = ['capsule',
-                 'bottle',
-                 'carpet',
-                 'leather',
-                 'pill',
-                 'transistor',
-                 'tile',
-                 'cable',
-                 'zipper',
-                 'toothbrush',
-                 'metal_nut',
-                 'hazelnut',
-                 'screw',
-                 'grid',
-                 'wood'
-                 ]
+    # obj_list = ['capsule',
+    #              'bottle',
+    #              'carpet',
+    #              'leather',
+    #              'pill',
+    #              'transistor',
+    #              'tile',
+    #              'cable',
+    #              'zipper',
+    #              'toothbrush',
+    #              'metal_nut',
+    #              'hazelnut',
+    #              'screw',
+    #              'grid',
+    #              'wood'
+    #              ]
+    obj_list=['toothbrush']
 
     with torch.cuda.device(args.gpu_id):
         test(obj_list,args.data_path, args.checkpoint_path, args.base_model_name)

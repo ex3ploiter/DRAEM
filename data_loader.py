@@ -7,6 +7,8 @@ import glob
 import imgaug.augmenters as iaa
 from perlin import rand_perlin_2d_np
 
+
+
 class MVTecDRAEMTestDataset(Dataset):
 
     def __init__(self, root_dir, resize_shape=None):
@@ -55,7 +57,8 @@ class MVTecDRAEMTestDataset(Dataset):
             image, mask = self.transform_image(img_path, mask_path)
             has_anomaly = np.array([1], dtype=np.float32)
 
-        sample = {'image': image, 'has_anomaly': has_anomaly,'mask': mask, 'idx': idx}
+        sample = {'image': image, 'has_anomaly': has_anomaly,'mask': mask, 'idx': idx 
+        , 'img_path':img_path}
 
         return sample
 

@@ -158,4 +158,3 @@ if __name__=="__main__":
 
     with torch.cuda.device(args.gpu_id):
         train_on_device(picked_classes, args)
-
